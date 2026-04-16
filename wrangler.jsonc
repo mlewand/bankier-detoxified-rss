@@ -26,6 +26,12 @@
 			"preview_id": "288ad65cddca4281ac7d678bc2e70e9c"
 		}
 	],
+	"analytics_engine_datasets": [
+		{
+			"binding": "ANALYTICS",
+			"dataset": "pipeline_metrics"
+		}
+	],
 	"vars": {
 		"UPSTREAM_RSS_URL": "https://www.bankier.pl/rss/wiadomosci.xml"
 	}

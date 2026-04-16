@@ -10,10 +10,10 @@ Point your RSS reader at the proxy URL instead of bankier.pl's feed. You get the
 
 Bankier.pl is a popular Polish financial news site. Their RSS feed frequently publishes headlines like:
 
-> *Prawie miliard na reklamy. Sprawdź, który bank wydał najwięcej*
-> ("Almost a billion on ads. Check which bank spent the most")
+> *Ten kraj też wdroży konta bez podatku od zysków. I też wzoruje się na Szwecji*
+> ("This country will also introduce tax-free investment accounts. And it also takes inspiration from Sweden")
 
-The article is about PKO BP spending 257 million złoty on marketing (a 48% year-over-year increase). None of that is in the headline or description. The tease is the whole point.
+The article is about Ireland planning to introduce new simplified investment accounts where capital gains are taxed at 0%, modelled on Sweden's ISK system, expected to be available from 2027. None of that is in the headline. The country, the tax treatment, the timeline — all withheld. The tease is the whole point.
 
 The signal this proxy looks for is **withheld information** — a headline that refers to a specific fact (a number, a named entity, a key noun) without revealing it. Structural patterns like the common Polish two-clause *"X. Y"* headline format are **not** treated as clickbait on their own, since legitimate informative headlines use the same form.
 
@@ -122,30 +122,6 @@ src/
   types.ts      Shared types (ArticleRecord, ArticleStatus)
   config.ts     Env var access
 ```
-
-### Article state machine
-
-```
-pending_classification
-  ├─ not_clickbait            Stage 1: informative headline, final
-  ├─ pending_refinement       Stage 1: clickbait detected
-  └─ error_retryable_classification
-
-pending_refinement
-  ├─ refined                  Stage 2: rewritten, final
-  ├─ llm_kept_original        Stage 2: original judged fine, final
-  ├─ error_retryable_refinement
-  └─ error_permanent          3 retries exhausted, or 404/410
-```
-
-### Caching
-
-| Layer | Mechanism | Key | TTL |
-|---|---|---|---|
-| L1 | Workers KV | Article ID (`/-(\d+)\.html/`) | 30 days |
-| L2 | Cache API | Feed URL | 3 minutes |
-
-The L2 cache means most requests return immediately without touching KV or the upstream feed.
 
 ### LLM
 

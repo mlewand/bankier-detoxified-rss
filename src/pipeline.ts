@@ -52,7 +52,18 @@ export async function runPipeline(
 	cache: Cache,
 	upstreamRssUrl: string,
 	llmApiKey: string,
+	analytics?: AnalyticsEngineDataset,
 ): Promise<void> {
+	// Metrics accumulated during this run, written as one data point at the end.
+	// doubles layout: [clickbait, not_clickbait, classification_errors, permanent_errors,
+	//                  classification_duration_ms, mean_refinement_duration_ms]
+	let clickbaitCount = 0;
+	let notClickbaitCount = 0;
+	let classificationErrorCount = 0;
+	let permanentErrorCount = 0;
+	let classificationDurationMs = 0;
+	const refinementDurations: number[] = [];
+
 	// 1. Fetch upstream RSS
 	let channel: RssChannel;
 	try {
@@ -115,9 +126,12 @@ export async function runPipeline(
 	if (toClassify.length > 0) {
 		let classifyResults: { id: string; clickbait: boolean }[] = [];
 
+		const classifyStart = Date.now();
 		try {
 			classifyResults = await classifyBatch(llmApiKey, toClassify);
+			classificationDurationMs = Date.now() - classifyStart;
 		} catch (err) {
+			classificationDurationMs = Date.now() - classifyStart;
 			console.error('Pipeline: Stage 1 batch classification failed', err);
 			// Mark all articles in this batch as retryable failures
 			for (const { id } of toClassify) {
@@ -125,6 +139,8 @@ export async function runPipeline(
 				if (!record) continue;
 				record.retryCount += 1;
 				record.status = record.retryCount >= MAX_RETRIES ? 'error_permanent' : 'error_retryable_classification';
+				if (record.status === 'error_permanent') permanentErrorCount++;
+				classificationErrorCount++;
 				await kvPutArticle(kv, record);
 			}
 		}
@@ -140,11 +156,15 @@ export async function runPipeline(
 					// LLM didn't return a result for this article
 					record.retryCount += 1;
 					record.status = record.retryCount >= MAX_RETRIES ? 'error_permanent' : 'error_retryable_classification';
+					if (record.status === 'error_permanent') permanentErrorCount++;
+					classificationErrorCount++;
 				} else if (clickbait) {
 					record.status = 'pending_refinement';
 					toRefine.push(id);
+					clickbaitCount++;
 				} else {
 					record.status = 'not_clickbait';
+					notClickbaitCount++;
 				}
 				await kvPutArticle(kv, record);
 			}
@@ -168,6 +188,7 @@ export async function runPipeline(
 				const { text, statusCode } = await fetchArticleText(item.url);
 				if (statusCode === 404 || statusCode === 410) {
 					record.status = 'error_permanent';
+					permanentErrorCount++;
 					await kvPutArticle(kv, record);
 					return;
 				}
@@ -176,17 +197,20 @@ export async function runPipeline(
 				console.error(`Pipeline: failed to fetch article ${id}`, err);
 				record.retryCount += 1;
 				record.status = record.retryCount >= MAX_RETRIES ? 'error_permanent' : 'error_retryable_refinement';
+				if (record.status === 'error_permanent') permanentErrorCount++;
 				await kvPutArticle(kv, record);
 				return;
 			}
 
 			// LLM refinement
+			const refineStart = Date.now();
 			try {
 				const result = await refineArticle(llmApiKey, {
 					title: record.originalTitle,
 					description: record.originalDescription,
 					text: articleText,
 				});
+				refinementDurations.push(Date.now() - refineStart);
 
 				if ('keep_original' in result && result.keep_original) {
 					record.status = 'llm_kept_original';
@@ -199,9 +223,11 @@ export async function runPipeline(
 					record.refinedDescription = refined.description ?? null;
 				}
 			} catch (err) {
+				refinementDurations.push(Date.now() - refineStart);
 				console.error(`Pipeline: refinement failed for article ${id}`, err);
 				record.retryCount += 1;
 				record.status = record.retryCount >= MAX_RETRIES ? 'error_permanent' : 'error_retryable_refinement';
+				if (record.status === 'error_permanent') permanentErrorCount++;
 			}
 
 			await kvPutArticle(kv, record);
@@ -213,4 +239,21 @@ export async function runPipeline(
 	// 6. Rebuild feed XML and write to L2 cache
 	const feedXml = buildFeedXml(channel, records);
 	await cachePutFeed(cache, upstreamRssUrl, feedXml);
+
+	// 7. Emit metrics
+	analytics?.writeDataPoint({
+		// doubles: [clickbait, not_clickbait, classification_errors, permanent_errors,
+		//           classification_duration_ms, mean_refinement_duration_ms]
+		doubles: [
+			clickbaitCount,
+			notClickbaitCount,
+			classificationErrorCount,
+			permanentErrorCount,
+			classificationDurationMs,
+			refinementDurations.length > 0
+				? refinementDurations.reduce((a, b) => a + b, 0) / refinementDurations.length
+				: 0,
+		],
+		indexes: ['pipeline_run'],
+	});
 }

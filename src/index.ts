@@ -71,6 +71,6 @@ export default {
 	async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
 		const { upstreamRssUrl, llmApiKey } = getConfig(env);
 		const cache = await caches.open(CACHE_NAME);
-		ctx.waitUntil(runPipeline(env.ARTICLE_CACHE, cache, upstreamRssUrl, llmApiKey));
+		ctx.waitUntil(runPipeline(env.ARTICLE_CACHE, cache, upstreamRssUrl, llmApiKey, env.ANALYTICS));
 	},
 } satisfies ExportedHandler<Env>;
