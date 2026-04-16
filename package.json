@@ -1,7 +1,9 @@
 {
   "name": "bankier-detoxified-rss",
-  "version": "0.0.0",
-  "private": true,
+  "description": "RSS proxy that rewrites clickbait headlines into informative ones using LLMs.",
+  "version": "0.0.1",
+  "private": false,
+  "license": "MIT",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
