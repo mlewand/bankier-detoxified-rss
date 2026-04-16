@@ -59,7 +59,7 @@ export type RefineResult =
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function extractJson(text: string): string {
+export function extractJson(text: string): string {
 	// Strip code fences if present
 	const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
 	if (fenced) return fenced[1].trim();

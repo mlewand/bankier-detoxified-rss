@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Bankier.pl - Wiadomości</title>
+    <link>https://www.bankier.pl</link>
+    <description>Najnowsze wiadomości finansowe</description>
+    <item>
+      <title>Gdzie najtrudniej o pracę? Te województwa odnotowały największy odpływ ogłoszeń</title>
+      <link>https://www.bankier.pl/wiadomosc/Gdzie-najtrudniej-o-prace-Te-wojewodztwa-odnotowaly-najwiekszy-odplyw-ogloszen-9114821.html</link>
+      <description>&lt;p&gt;&lt;img width="945" height="560" src="http://galeria.bankier.pl/img.jpg" alt="" /&gt;Od kwietnia 2025 r. systematycznie maleje liczba ofert pracy.&lt;/p&gt;</description>
+      <pubDate>Wed, 16 Apr 2026 10:00:00 +0200</pubDate>
+      <guid>https://www.bankier.pl/wiadomosc/Gdzie-najtrudniej-o-prace-9114821.html</guid>
+    </item>
+    <item>
+      <title>Nest Bank stawia na lokaty walutowe. Do 2,25% na depozycie w euro</title>
+      <link>https://www.bankier.pl/wiadomosc/Nest-Bank-lokaty-walutowe-9113525.html</link>
+      <description>Nest Bank wprowadza nowe lokaty walutowe z oprocentowaniem do 2,25% w euro.</description>
+      <pubDate>Wed, 16 Apr 2026 09:00:00 +0200</pubDate>
+      <guid>https://www.bankier.pl/wiadomosc/Nest-Bank-lokaty-walutowe-9113525.html</guid>
+    </item>
+    <item>
+      <title>Artykuł bez ID w URL</title>
+      <link>https://www.bankier.pl/wiadomosc/bez-id.html</link>
+      <description>Ten artykuł nie ma ID w URL i powinien być pominięty.</description>
+      <pubDate>Wed, 16 Apr 2026 08:00:00 +0200</pubDate>
+      <guid>https://www.bankier.pl/wiadomosc/bez-id.html</guid>
+    </item>
+    <item>
+      <title>Tytuł z &amp; znakami &lt;specjalnymi&gt;</title>
+      <link>https://www.bankier.pl/wiadomosc/special-chars-9999999.html</link>
+      <description>Opis z &amp;amp; encjami.</description>
+      <pubDate>Wed, 16 Apr 2026 07:00:00 +0200</pubDate>
+      <guid>https://www.bankier.pl/wiadomosc/special-chars-9999999.html</guid>
+    </item>
+  </channel>
+</rss>
