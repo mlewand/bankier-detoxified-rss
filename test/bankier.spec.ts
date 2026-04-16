@@ -97,6 +97,95 @@ describe('bankier.ts - parseRss', () => {
 		const channel = parseRss(xml);
 		expect(channel.items).toHaveLength(0);
 	});
+
+	it('returns empty string for missing fields (coerceString with undefined)', () => {
+		// An item with no <description> or <pubDate> → coerceString(undefined) → ''
+		const xml = `<?xml version="1.0"?><rss version="2.0"><channel>
+			<title>T</title><link>https://www.bankier.pl</link><description>D</description>
+			<item>
+				<title>Title</title>
+				<link>https://www.bankier.pl/wiadomosc/article-9114821.html</link>
+				<guid>https://www.bankier.pl/wiadomosc/article-9114821.html</guid>
+			</item>
+		</channel></rss>`;
+		const channel = parseRss(xml);
+		expect(channel.items[0].description).toBe('');
+		expect(channel.items[0].pubDate).toBe('');
+	});
+
+	it('skips item when both <link> and <guid> are absent (url falls back to empty string)', () => {
+		// bankier.ts:51 — r['link'] ?? r['guid'] ?? '' → '' → no numeric id → item skipped
+		const xml = `<?xml version="1.0"?><rss version="2.0"><channel>
+			<title>T</title><link>https://www.bankier.pl</link><description>D</description>
+			<item>
+				<title>No URL at all</title>
+				<description>Desc</description>
+			</item>
+		</channel></rss>`;
+		const channel = parseRss(xml);
+		expect(channel.items).toHaveLength(0);
+	});
+
+	it('uses <guid> as URL when <link> element is absent', () => {
+		// bankier.ts:51 — r['link'] ?? r['guid'] fallback
+		const xml = `<?xml version="1.0"?><rss version="2.0"><channel>
+			<title>T</title><link>https://www.bankier.pl</link><description>D</description>
+			<item>
+				<title>Title</title>
+				<description>Desc</description>
+				<pubDate>Wed, 16 Apr 2026 10:00:00 +0200</pubDate>
+				<guid>https://www.bankier.pl/wiadomosc/article-9114821.html</guid>
+			</item>
+		</channel></rss>`;
+		const channel = parseRss(xml);
+		expect(channel.items).toHaveLength(1);
+		expect(channel.items[0].id).toBe('9114821');
+		expect(channel.items[0].url).toContain('9114821');
+	});
+
+	it('uses <link> as guid when <guid> element is absent', () => {
+		// bankier.ts:60 — r['guid'] ?? r['link'] fallback
+		const xml = `<?xml version="1.0"?><rss version="2.0"><channel>
+			<title>T</title><link>https://www.bankier.pl</link><description>D</description>
+			<item>
+				<title>Title</title>
+				<link>https://www.bankier.pl/wiadomosc/article-9114821.html</link>
+				<description>Desc</description>
+				<pubDate>Wed, 16 Apr 2026 10:00:00 +0200</pubDate>
+			</item>
+		</channel></rss>`;
+		const channel = parseRss(xml);
+		expect(channel.items[0].guid).toContain('9114821');
+	});
+
+	it('coerces a numeric guid to string (fast-xml-parser parses bare numbers as number type)', () => {
+		// fast-xml-parser parses a field like <guid>9114821</guid> as the number 9114821
+		// coerceString must call String() on it
+		const xml = `<?xml version="1.0"?><rss version="2.0"><channel>
+			<title>T</title><link>https://www.bankier.pl</link><description>D</description>
+			<item>
+				<link>https://www.bankier.pl/wiadomosc/article-9114821.html</link>
+				<title>Title</title>
+				<description>Desc</description>
+				<pubDate>Wed, 16 Apr 2026 10:00:00 +0200</pubDate>
+				<guid>9114821</guid>
+			</item>
+		</channel></rss>`;
+		const channel = parseRss(xml);
+		expect(channel.items[0].guid).toBe('9114821');
+	});
+
+	it('handles element with attributes and text content (#text object from fast-xml-parser)', () => {
+		// When an element has attributes, fast-xml-parser returns { "@_attr": "...", "#text": "value" }
+		// coerceString must extract the #text field in this case
+		const xml = `<?xml version="1.0"?><rss version="2.0"><channel>
+			<title type="main">Bankier.pl</title>
+			<link>https://www.bankier.pl</link>
+			<description>Test</description>
+		</channel></rss>`;
+		const channel = parseRss(xml);
+		expect(channel.title).toBe('Bankier.pl');
+	});
 });
 
 describe('bankier.ts - fetchRss', () => {
@@ -153,6 +242,19 @@ describe('bankier.ts - fetchArticleText', () => {
 			const result = await fetchArticleText('https://example.com/article-9114821.html');
 			expect(result.statusCode).toBe(200);
 			expect(result.text).toContain('Pierwsze zdanie artykułu');
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	it('returns empty string when Readability cannot extract content', async () => {
+		// bankier.ts:98 — article?.textContent?.trim() ?? '' fallback
+		const original = globalThis.fetch;
+		globalThis.fetch = async () => new Response('<html></html>', { status: 200 });
+		try {
+			const result = await fetchArticleText('https://example.com/article-9114821.html');
+			expect(result.statusCode).toBe(200);
+			expect(result.text).toBe('');
 		} finally {
 			globalThis.fetch = original;
 		}

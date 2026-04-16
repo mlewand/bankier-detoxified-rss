@@ -239,4 +239,75 @@ describe('runPipeline', () => {
 			runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key'),
 		).resolves.toBeUndefined();
 	});
+
+	it('article in error_retryable_refinement is retried in next cron run', async () => {
+		await seedRecord(ARTICLE_ID_1, ARTICLE_URL_1, { status: 'error_retryable_refinement', retryCount: 1 });
+		await seedRecord(ARTICLE_ID_2, ARTICLE_URL_2, { status: 'not_clickbait' });
+
+		interceptRss();
+		interceptArticle(ARTICLE_PATH_1);
+		interceptLlm({ title: 'Retry succeeded', description: '<p>Retry desc.</p>' });
+
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const record = await kvGetArticle(env.ARTICLE_CACHE, ARTICLE_ID_1);
+		expect(record?.status).toBe('refined');
+		expect(record?.refinedTitle).toBe('Retry succeeded');
+	});
+
+	it('article already in pending_refinement is refined without re-classifying', async () => {
+		// Simulates a cron run where classification already happened but refinement hadn't yet
+		await seedRecord(ARTICLE_ID_1, ARTICLE_URL_1, { status: 'pending_refinement' });
+		await seedRecord(ARTICLE_ID_2, ARTICLE_URL_2, { status: 'not_clickbait' });
+
+		interceptRss();
+		// No classification LLM call expected — article is already classified
+		interceptArticle(ARTICLE_PATH_1);
+		interceptLlm({ title: 'Refined on second run', description: '<p>Refined.</p>' });
+
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const record = await kvGetArticle(env.ARTICLE_CACHE, ARTICLE_ID_1);
+		expect(record?.status).toBe('refined');
+		expect(record?.refinedTitle).toBe('Refined on second run');
+	});
+
+	it('LLM returns partial results omitting an article -> omitted article gets error_retryable_classification', async () => {
+		interceptRss();
+		// LLM only returns result for article 2, silently omitting article 1
+		interceptLlm([{ id: ARTICLE_ID_2, clickbait: false }]);
+
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const record = await kvGetArticle(env.ARTICLE_CACHE, ARTICLE_ID_1);
+		expect(record?.status).toBe('error_retryable_classification');
+		expect(record?.retryCount).toBe(1);
+	});
+
+	it('article fetch throws network error -> error_retryable_refinement', async () => {
+		interceptRss();
+		interceptLlm([{ id: ARTICLE_ID_1, clickbait: true }, { id: ARTICLE_ID_2, clickbait: false }]);
+		// Simulate a network-level throw (not a 4xx response)
+		fetchMock.get(RSS_ORIGIN).intercept({ path: ARTICLE_PATH_1 }).replyWithError('Network failure');
+
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const record = await kvGetArticle(env.ARTICLE_CACHE, ARTICLE_ID_1);
+		expect(record?.status).toBe('error_retryable_refinement');
+		expect(record?.retryCount).toBe(1);
+	});
+
+	it('refinement LLM throws -> error_retryable_refinement', async () => {
+		interceptRss();
+		interceptLlm([{ id: ARTICLE_ID_1, clickbait: true }, { id: ARTICLE_ID_2, clickbait: false }]);
+		interceptArticle(ARTICLE_PATH_1);
+		// LLM call for refinement returns 500
+		interceptLlm('Internal Server Error', 500);
+
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const record = await kvGetArticle(env.ARTICLE_CACHE, ARTICLE_ID_1);
+		expect(record?.status).toBe('error_retryable_refinement');
+		expect(record?.retryCount).toBe(1);
+	});
 });

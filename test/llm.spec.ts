@@ -38,6 +38,23 @@ describe('llm.ts - extractJson', () => {
 		const input = '[{"id":"1"}] and {"other":true}';
 		expect(extractJson(input)).toBe('[{"id":"1"}]');
 	});
+
+	it('falls back to trimmed input when no JSON found', () => {
+		const input = '  Sorry, I cannot help with that.  ';
+		expect(extractJson(input)).toBe('Sorry, I cannot help with that.');
+	});
+
+	it('falls back when array bracket found but no closing bracket', () => {
+		// [ present but no ] — falls through to object check, then to fallback
+		const input = 'starts with [ but never closes';
+		expect(extractJson(input)).toBe('starts with [ but never closes');
+	});
+
+	it('falls back when object brace found but no closing brace', () => {
+		// { present but no } — falls through to fallback
+		const input = 'starts with { but never closes';
+		expect(extractJson(input)).toBe('starts with { but never closes');
+	});
 });
 
 // ─── classifyBatch ────────────────────────────────────────────────────────────
@@ -103,6 +120,18 @@ describe('llm.ts - classifyBatch', () => {
 			restore();
 		}
 	});
+
+	it('returns empty string content when LLM response has no choices', async () => {
+		// callLlm returns '' when choices is empty; classifyBatch then fails JSON.parse
+		const original = globalThis.fetch;
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ choices: [] }), { status: 200 });
+		try {
+			await expect(classifyBatch('key', ARTICLES)).rejects.toThrow();
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
 });
 
 // ─── refineArticle ────────────────────────────────────────────────────────────
@@ -157,6 +186,26 @@ describe('llm.ts - refineArticle', () => {
 			await expect(refineArticle('key', ARTICLE_INPUT)).rejects.toThrow('429');
 		} finally {
 			restore();
+		}
+	});
+
+	it('truncates article text longer than 8000 chars', async () => {
+		const longText = 'x'.repeat(9000);
+		let capturedBody = '';
+		const original = globalThis.fetch;
+		globalThis.fetch = async (url, init) => {
+			capturedBody = JSON.parse((init?.body as string) ?? '{}').messages?.[1]?.content ?? '';
+			return new Response(
+				JSON.stringify({ choices: [{ message: { content: '{"title":"T","description":"D"}' } }] }),
+				{ status: 200 },
+			);
+		};
+		try {
+			await refineArticle('key', { title: 'T', description: 'D', text: longText });
+			expect(capturedBody).toContain('x'.repeat(8000) + '…');
+			expect(capturedBody).not.toContain('x'.repeat(8001));
+		} finally {
+			globalThis.fetch = original;
 		}
 	});
 });
