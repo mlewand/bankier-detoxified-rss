@@ -10,9 +10,21 @@ function escapeXml(str: string): string {
 		.replace(/'/g, '&apos;');
 }
 
+function stripImgTags(html: string): string {
+	// Intentionally simplified image tag strip. The format is well known.
+	// No need to use a full HTML parser for this.
+	return html.replace(/<img[^>]*\/?>/gi, '');
+}
+
 function renderItem(item: RssItem, record: ArticleRecord | undefined): string {
 	const title = record?.refinedTitle ?? item.title;
-	const description = record?.refinedDescription ?? item.description;
+	let description = record?.refinedDescription ?? item.description;
+
+	if (record?.status === 'refined') {
+		description +=
+			`<hr/><p>Original title: ${record.originalTitle}</p>` +
+			stripImgTags(record.originalDescription);
+	}
 
 	return [
 		'    <item>',
