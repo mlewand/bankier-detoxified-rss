@@ -65,7 +65,7 @@ function parseTitleFor(xml: string, itemIndex = 0): string {
 	return raw.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }
 
-describe('feed.ts — buildFeedXml', () => {
+describe('feed.ts - buildFeedXml', () => {
 	describe('article with no KV record', () => {
 		it('uses original title and description', () => {
 			const xml = buildFeedXml(CHANNEL, new Map());

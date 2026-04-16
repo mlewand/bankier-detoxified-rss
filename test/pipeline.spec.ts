@@ -1,5 +1,5 @@
 import { env, fetchMock } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, beforeEach, vi } from 'vitest';
 import { runPipeline, runConcurrently } from '../src/pipeline';
 import { kvGetArticle } from '../src/cache';
 
@@ -90,9 +90,12 @@ beforeEach(async () => {
 	// Clear KV between tests so state doesn't leak
 	await env.ARTICLE_CACHE.delete(ARTICLE_ID_1);
 	await env.ARTICLE_CACHE.delete(ARTICLE_ID_2);
+	// Suppress console.error from intentional error-path tests
+	vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	fetchMock.assertNoPendingInterceptors();
 });
 
@@ -164,7 +167,7 @@ describe('runPipeline', () => {
 		expect(record?.refinedTitle).toBeNull();
 	});
 
-	it('keep_original: LLM refinement returns keep_original → llm_kept_original', async () => {
+	it('keep_original: LLM refinement returns keep_original -> llm_kept_original', async () => {
 		interceptRss();
 		interceptLlm([{ id: ARTICLE_ID_1, clickbait: true }, { id: ARTICLE_ID_2, clickbait: true }]);
 		interceptArticle(ARTICLE_PATH_1);
@@ -179,7 +182,7 @@ describe('runPipeline', () => {
 		expect(record?.refinedTitle).toBeNull();
 	});
 
-	it('article fetch 404 → error_permanent immediately', async () => {
+	it('article fetch 404 -> error_permanent immediately', async () => {
 		interceptRss();
 		interceptLlm([{ id: ARTICLE_ID_1, clickbait: true }, { id: ARTICLE_ID_2, clickbait: false }]);
 		interceptArticle(ARTICLE_PATH_1, 404, '');
@@ -190,7 +193,7 @@ describe('runPipeline', () => {
 		expect(record?.status).toBe('error_permanent');
 	});
 
-	it('classification LLM failure → error_retryable_classification with retryCount 1', async () => {
+	it('classification LLM failure -> error_retryable_classification with retryCount 1', async () => {
 		interceptRss();
 		interceptLlm('Internal Server Error', 500);
 
@@ -201,7 +204,7 @@ describe('runPipeline', () => {
 		expect(record?.retryCount).toBe(1);
 	});
 
-	it('after MAX_RETRIES classification failures → error_permanent', async () => {
+	it('after MAX_RETRIES classification failures -> error_permanent', async () => {
 		// Pre-seed records already at retryCount 2
 		await seedRecord(ARTICLE_ID_1, ARTICLE_URL_1, { status: 'error_retryable_classification', retryCount: 2 });
 		await seedRecord(ARTICLE_ID_2, ARTICLE_URL_2, { status: 'error_retryable_classification', retryCount: 2 });

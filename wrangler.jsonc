@@ -6,7 +6,7 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "bankier-detoxified-rss",
 	"main": "src/index.ts",
-	"compatibility_date": "2026-04-16",
+	"compatibility_date": "2026-03-10",
 	"observability": {
 		"enabled": true
 	},

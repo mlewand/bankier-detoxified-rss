@@ -3,7 +3,7 @@ import { extractJson, classifyBatch, refineArticle } from '../src/llm';
 
 // ─── extractJson ──────────────────────────────────────────────────────────────
 
-describe('llm.ts — extractJson', () => {
+describe('llm.ts - extractJson', () => {
 	it('returns a bare JSON array unchanged', () => {
 		const input = '[{"id":"1","clickbait":true}]';
 		expect(extractJson(input)).toBe(input);
@@ -59,7 +59,7 @@ function mockFetch(body: unknown, status = 200) {
 	return () => { globalThis.fetch = original; };
 }
 
-describe('llm.ts — classifyBatch', () => {
+describe('llm.ts - classifyBatch', () => {
 	it('returns empty array when given no articles', async () => {
 		const result = await classifyBatch('key', []);
 		expect(result).toEqual([]);
@@ -113,7 +113,7 @@ const ARTICLE_INPUT = {
 	text: 'Full article text.',
 };
 
-describe('llm.ts — refineArticle', () => {
+describe('llm.ts - refineArticle', () => {
 	it('returns refined title and description', async () => {
 		const restore = mockFetch({ title: 'Clear title', description: 'Clear description' });
 		try {

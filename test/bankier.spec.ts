@@ -51,7 +51,7 @@ const SAMPLE_ARTICLE_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-describe('bankier.ts — parseRss', () => {
+describe('bankier.ts - parseRss', () => {
 	it('parses channel metadata', () => {
 		const channel = parseRss(FIXTURE_RSS);
 		expect(channel.title).toBe('Bankier.pl - Wiadomości');
@@ -83,7 +83,7 @@ describe('bankier.ts — parseRss', () => {
 
 	it('decodes HTML entities in description', () => {
 		const channel = parseRss(FIXTURE_RSS);
-		// first item description has &lt;p&gt;&lt;img ... — should come back as HTML tags
+		// first item description has &lt;p&gt;&lt;img ... - should come back as HTML tags
 		expect(channel.items[0].description).toContain('<p>');
 		expect(channel.items[0].description).toContain('<img');
 	});
@@ -99,7 +99,7 @@ describe('bankier.ts — parseRss', () => {
 	});
 });
 
-describe('bankier.ts — fetchRss', () => {
+describe('bankier.ts - fetchRss', () => {
 	it('throws when upstream returns non-200', async () => {
 		const original = globalThis.fetch;
 		globalThis.fetch = async () => new Response('Not Found', { status: 404, statusText: 'Not Found' });
@@ -122,7 +122,7 @@ describe('bankier.ts — fetchRss', () => {
 	});
 });
 
-describe('bankier.ts — fetchArticleText', () => {
+describe('bankier.ts - fetchArticleText', () => {
 	it('returns statusCode 404 without throwing', async () => {
 		const original = globalThis.fetch;
 		globalThis.fetch = async () => new Response('', { status: 404 });
