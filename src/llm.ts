@@ -32,6 +32,8 @@ const REFINEMENT_SYSTEM_PROMPT = `You are a news editor rewriting clickbait head
 Given the original title, description, and full article text:
 1. Rewrite the title to directly state the withheld key fact. Keep it concise (under 120 characters). Preserve Polish language.
 2. Rewrite the description to state the most important facts directly.
+   - If the original description uses HTML, return your rewritten text as HTML too.
+   - If the original description contains an <img> tag, copy it verbatim to the start of your rewritten description.
 
 If the original title actually contains all key information (no meaningful withholding), return: {"keep_original":true}
 Otherwise return: {"title":"...","description":"..."}
