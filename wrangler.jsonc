@@ -13,33 +13,24 @@
 	"upload_source_maps": true,
 	"compatibility_flags": [
 		"nodejs_compat"
-	]
-	/**
-	 * Smart Placement
-	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-	 */
-	// "placement": {  "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
-	/**
-	 * Static Assets
-	 * https://developers.cloudflare.com/workers/static-assets/binding/
-	 */
-	// "assets": {  "directory": "./public/",  "binding": "ASSETS" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
+	],
+	"triggers": {
+		"crons": [
+			"*/2 * * * *"
+		]
+	},
+	"kv_namespaces": [
+		{
+			"binding": "ARTICLE_CACHE",
+			"id": "cb664a901f9d49719aff69e4f30c8072",
+			"preview_id": "288ad65cddca4281ac7d678bc2e70e9c"
+		}
+	],
+	"vars": {
+		"UPSTREAM_RSS_URL": "https://www.bankier.pl/rss/wiadomosci.xml"
+	}
+	// LLM_API_KEY is a secret — set it with:
+	//   wrangler secret put LLM_API_KEY
+	// For local dev, add to .dev.vars:
+	//   LLM_API_KEY=your_token_plan_key_here
 }

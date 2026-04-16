@@ -1,0 +1,2 @@
+# Copy to .dev.vars (gitignored) and fill in your Token Plan Key
+LLM_API_KEY=your_minimax_token_plan_key_here
