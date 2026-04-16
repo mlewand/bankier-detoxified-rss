@@ -6,6 +6,7 @@ export default defineWorkersConfig({
 			provider: 'istanbul',
 			include: ['src/**/*.ts'],
 			exclude: ['src/env.d.ts'],
+			reporter: ['text', 'html'],
 		},
 		poolOptions: {
 			workers: {
