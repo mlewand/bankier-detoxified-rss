@@ -27,7 +27,7 @@ function needsRefinement(record: ArticleRecord | undefined): boolean {
 	return false;
 }
 
-async function runConcurrently<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<PromiseSettledResult<T>[]> {
+export async function runConcurrently<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<PromiseSettledResult<T>[]> {
 	const results: PromiseSettledResult<T>[] = new Array(tasks.length);
 	let nextIndex = 0;
 
