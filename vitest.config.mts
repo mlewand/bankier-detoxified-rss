@@ -7,6 +7,9 @@ export default defineWorkersConfig({
 			include: ['src/**/*.ts'],
 			exclude: ['src/env.d.ts'],
 			reporter: ['text', 'html'],
+			thresholds: {
+				statements: 95,
+			},
 		},
 		poolOptions: {
 			workers: {
