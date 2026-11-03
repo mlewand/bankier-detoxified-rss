@@ -10,6 +10,10 @@ export interface FeedIndex {
 	channelDescription: string;
 	itemIds: string[];
 	updatedAt: string;
+	/** SHA-256 of the upstream RSS XML this index was built from. */
+	rssHash?: string;
+	/** True when some item still needs classification or refinement after the run. */
+	hasPendingWork?: boolean;
 }
 
 // ─── Article KV helpers ───────────────────────────────────────────────────────

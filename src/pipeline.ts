@@ -1,11 +1,19 @@
 import type { ArticleRecord, ArticleStatus } from './types';
-import { fetchRss, fetchArticleText, type RssChannel } from './bankier';
-import { kvGetMany, kvPutArticle, kvPutFeedIndex, cachePutFeed } from './cache';
+import { fetchRssXml, parseRss, fetchArticleText, type RssChannel } from './bankier';
+import { kvGetMany, kvPutArticle, kvGetFeedIndex, kvPutFeedIndex, cachePutFeed } from './cache';
 import { classifyBatch, refineArticle, type ArticleInput } from './llm';
 import { buildFeedXml } from './feed';
 
 const MAX_RETRIES = 3;
 const REFINEMENT_CONCURRENCY = 5;
+// Bounds per-run CPU and keeps the run within the Free plan's 50-subrequest limit
+// (each refinement costs 2 subrequests). Leftovers are picked up by the next run.
+export const MAX_REFINEMENTS_PER_RUN = 5;
+
+export async function sha256Hex(text: string): Promise<string> {
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 const TERMINAL_STATUSES: ArticleStatus[] = ['not_clickbait', 'refined', 'llm_kept_original', 'error_permanent'];
 
@@ -66,8 +74,18 @@ export async function runPipeline(
 
 	// 1. Fetch upstream RSS
 	let channel: RssChannel;
+	let rssHash: string;
 	try {
-		channel = await fetchRss(upstreamRssUrl);
+		const xml = await fetchRssXml(upstreamRssUrl);
+		rssHash = await sha256Hex(xml);
+
+		// Nothing changed upstream and nothing left to retry → skip all parsing and KV work.
+		const previous = await kvGetFeedIndex(kv);
+		if (previous?.rssHash === rssHash && previous.hasPendingWork === false) {
+			return;
+		}
+
+		channel = parseRss(xml);
 	} catch (err) {
 		console.error('Pipeline: failed to fetch upstream RSS', err);
 		return;
@@ -75,15 +93,6 @@ export async function runPipeline(
 
 	const allIds = channel.items.map((i) => i.id);
 	const now = new Date().toISOString();
-
-	// Persist the current feed structure so the fetch handler can rebuild without upstream
-	await kvPutFeedIndex(kv, {
-		channelTitle: channel.title,
-		channelLink: channel.link,
-		channelDescription: channel.description,
-		itemIds: allIds,
-		updatedAt: now,
-	});
 
 	// 2. Batch read KV
 	const records = await kvGetMany(kv, allIds);
@@ -172,7 +181,7 @@ export async function runPipeline(
 	}
 
 	// 5. Stage 2 — per-article refinement (deduped, capped concurrency)
-	const uniqueToRefine = [...new Set(toRefine)];
+	const uniqueToRefine = [...new Set(toRefine)].slice(0, MAX_REFINEMENTS_PER_RUN);
 
 	if (uniqueToRefine.length > 0) {
 		const tasks = uniqueToRefine.map((id) => async () => {
@@ -236,11 +245,27 @@ export async function runPipeline(
 		await runConcurrently(tasks, REFINEMENT_CONCURRENCY);
 	}
 
-	// 6. Rebuild feed XML and write to L2 cache
+	// 6. Persist the feed structure so the fetch handler can rebuild without upstream,
+	//    plus what the next run needs to decide whether it can skip.
+	const hasPendingWork = channel.items.some((item) => {
+		const record = records.get(item.id);
+		return needsClassification(record) || needsRefinement(record);
+	});
+	await kvPutFeedIndex(kv, {
+		channelTitle: channel.title,
+		channelLink: channel.link,
+		channelDescription: channel.description,
+		itemIds: allIds,
+		updatedAt: now,
+		rssHash,
+		hasPendingWork,
+	});
+
+	// 7. Rebuild feed XML and write to L2 cache
 	const feedXml = buildFeedXml(channel, records);
 	await cachePutFeed(cache, upstreamRssUrl, feedXml);
 
-	// 7. Emit metrics
+	// 8. Emit metrics
 	analytics?.writeDataPoint({
 		// doubles: [clickbait, not_clickbait, classification_errors, permanent_errors,
 		//           classification_duration_ms, mean_refinement_duration_ms]

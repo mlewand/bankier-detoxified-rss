@@ -24,7 +24,7 @@ npx vitest run test/index.spec.ts
 
 The worker has two entry points in `src/index.ts`:
 - **`fetch`** — serves cached feed XML from L2 (Cache API); on miss, rebuilds XML from KV only (no LLM, no upstream fetches)
-- **`scheduled`** — cron trigger (every 2 min); runs the full pipeline
+- **`scheduled`** — cron trigger (every 10 min); runs the full pipeline, but returns right after hashing the upstream RSS when it is unchanged and no retries are pending
 
 ### Planned file structure (`src/`)
 
@@ -32,7 +32,7 @@ The worker has two entry points in `src/index.ts`:
 |---|---|
 | `index.ts` | Worker entry: `fetch` + `scheduled` handlers |
 | `pipeline.ts` | Cron orchestration: fetch RSS → classify → refine → rebuild feed |
-| `bankier.ts` | Fetch upstream RSS, parse XML, extract article text via Readability |
+| `bankier.ts` | Fetch upstream RSS, parse XML, extract article text via HTMLRewriter |
 | `llm.ts` | `classifyBatch()` (Stage 1) and `refineArticle()` (Stage 2) |
 | `cache.ts` | KV read/write helpers; L2 Cache API helpers |
 | `feed.ts` | Build output RSS XML from cached article records |
@@ -47,7 +47,8 @@ The worker has two entry points in `src/index.ts`:
 - Non-clickbait → `status: 'not_clickbait'` (final, no further work)
 
 **Stage 2 — per-article refinement** (only for clickbait):
-- Fetch full article HTML → extract text via `@mozilla/readability` + `linkedom`
+- Fetch full article HTML → extract text via the native `HTMLRewriter` (`<article>` paragraphs/headings, falling back to all `<p>`)
+- At most `MAX_REFINEMENTS_PER_RUN` (5) articles per run; the rest stay `pending_refinement` for the next run
 - LLM rewrites title/description OR returns `keep_original: true`
 - Run in parallel via `Promise.allSettled` with concurrency cap of 5
 
@@ -71,6 +72,10 @@ pending_refinement
 - **L1 — KV** keyed by article ID (extracted via `/-(\d+)\.html/`): per-article `ArticleRecord`, TTL ~30 days
 - **L2 — Cache API** keyed by feed URL: full RSS XML output, TTL 3 minutes
 
+### Free plan CPU budget
+
+The Free plan allows 10 ms of CPU per invocation, cron runs included. Avoid DOM-building libraries (linkedom, Readability, cheerio) and repeated parsing on the cron path — they cost 100+ ms per article page. Prefer `HTMLRewriter` and the feed-hash short-circuit in `pipeline.ts`.
+
 ### LLM
 
 Provider-abstracted; initially MiniMax (Token Plan Key). The `llm.ts` module should be swappable to Anthropic/OpenAI without touching pipeline logic.
@@ -84,4 +89,4 @@ Withheld key information is the signal — **not** structural patterns like "X. 
 Before implementing, add:
 - KV namespace binding (e.g. `ARTICLE_CACHE`)
 - Environment variables / secrets: LLM API key, upstream RSS URL
-- Cron trigger: `"triggers": { "crons": ["*/2 * * * *"] }`
+- Cron trigger: `"triggers": { "crons": ["*/10 * * * *"] }`

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRss, fetchRss, fetchArticleText } from '../src/bankier';
+import { parseRss, fetchRss, fetchRssXml, fetchArticleText, decodeEntities } from '../src/bankier';
 
 const FIXTURE_RSS = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -38,7 +38,7 @@ const FIXTURE_RSS = `<?xml version="1.0" encoding="UTF-8"?>
   </channel>
 </rss>`;
 
-// Minimal article HTML for Readability extraction
+// Minimal article HTML for text extraction
 const SAMPLE_ARTICLE_HTML = `<!DOCTYPE html>
 <html>
 <head><title>Test Article</title></head>
@@ -235,7 +235,7 @@ describe('bankier.ts - fetchArticleText', () => {
 		}
 	});
 
-	it('extracts text from article HTML via Readability', async () => {
+	it('extracts text from article HTML', async () => {
 		const original = globalThis.fetch;
 		globalThis.fetch = async () => new Response(SAMPLE_ARTICLE_HTML, { status: 200 });
 		try {
@@ -247,14 +247,64 @@ describe('bankier.ts - fetchArticleText', () => {
 		}
 	});
 
-	it('returns empty string when Readability cannot extract content', async () => {
-		// bankier.ts:98 — article?.textContent?.trim() ?? '' fallback
+	it('returns empty string when the page has no text content', async () => {
 		const original = globalThis.fetch;
 		globalThis.fetch = async () => new Response('<html></html>', { status: 200 });
 		try {
 			const result = await fetchArticleText('https://example.com/article-9114821.html');
 			expect(result.statusCode).toBe(200);
 			expect(result.text).toBe('');
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	async function extract(html: string): Promise<string> {
+		const original = globalThis.fetch;
+		globalThis.fetch = async () => new Response(html, { status: 200 });
+		try {
+			return (await fetchArticleText('https://example.com/article-9114821.html')).text;
+		} finally {
+			globalThis.fetch = original;
+		}
+	}
+
+	it('uses only <article> paragraphs and headings when the page has an <article>', async () => {
+		const text = await extract(`<html><body>
+			<nav><p>Menu nawigacji</p></nav>
+			<article><h2>Śródtytuł</h2><p>Treść <b>artykułu</b>.</p><script>var x = 1;</script></article>
+			<aside><p>Powiązane artykuły</p></aside>
+		</body></html>`);
+		expect(text).toBe('Śródtytuł\nTreść artykułu.');
+	});
+
+	it('falls back to all <p> elements when there is no <article>', async () => {
+		const text = await extract('<html><body><div><p>Pierwszy akapit.</p><p>Drugi akapit.</p></div></body></html>');
+		expect(text).toBe('Pierwszy akapit.\nDrugi akapit.');
+	});
+
+	it('normalizes whitespace and decodes entities', async () => {
+		const text = await extract('<article><p>  Kurs&nbsp;EUR\n\t wzrósł o 2&nbsp;% &ndash; &bdquo;rekord&rdquo; &amp; więcej  </p></article>');
+		expect(text).toBe('Kurs EUR wzrósł o 2 % – „rekord” & więcej');
+	});
+});
+
+describe('bankier.ts - decodeEntities', () => {
+	it('decodes decimal and hex numeric entities', () => {
+		expect(decodeEntities('&#243;&#x142;')).toBe('ół');
+	});
+
+	it('leaves unknown and out-of-range entities untouched', () => {
+		expect(decodeEntities('&foo; &#0; &#x110000;')).toBe('&foo; &#0; &#x110000;');
+	});
+});
+
+describe('bankier.ts - fetchRssXml', () => {
+	it('returns the raw XML body', async () => {
+		const original = globalThis.fetch;
+		globalThis.fetch = async () => new Response('<rss/>', { status: 200 });
+		try {
+			expect(await fetchRssXml('https://example.com/rss.xml')).toBe('<rss/>');
 		} finally {
 			globalThis.fetch = original;
 		}

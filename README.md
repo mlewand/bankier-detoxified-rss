@@ -27,7 +27,7 @@ The proxy runs a two-stage LLM pipeline on a 2-minute cron:
 All new articles are sent to the LLM in a single batch. It returns a JSON array marking each as clickbait or not. Non-clickbait articles are finalized immediately and pass through unchanged.
 
 **Stage 2 — Rewrite** (only for clickbait articles)
-For each clickbait article the LLM fetches the full article text via [Readability](https://github.com/mozilla/readability), then rewrites the title and description to lead with the key fact. Up to 5 articles are refined in parallel. If the LLM determines on closer reading that the original is actually fine, it signals `keep_original` and the article passes through unchanged.
+For each clickbait article the worker fetches the full article page and extracts its body text with the runtime's native [HTMLRewriter](https://developers.cloudflare.com/workers/runtime-apis/html-rewriter/), then the LLM rewrites the title and description to lead with the key fact. Up to 5 articles are refined per cron run (in parallel); any remaining ones are picked up by the next run. If the LLM determines on closer reading that the original is actually fine, it signals `keep_original` and the article passes through unchanged.
 
 When you request the feed, your RSS reader never waits for any of this — the read path serves cached XML directly. All LLM work happens in the background on the cron schedule.
 
@@ -91,7 +91,7 @@ npx wrangler secret put LLM_API_KEY
 npm run deploy
 ```
 
-Your proxy is now live. The cron starts processing articles within 2 minutes of the first run.
+Your proxy is now live. The cron starts processing articles within 10 minutes of deployment.
 
 ### Local development
 
