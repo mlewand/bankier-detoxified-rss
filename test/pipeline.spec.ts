@@ -1,7 +1,7 @@
 import { env, fetchMock } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, afterEach, beforeEach, vi } from 'vitest';
-import { runPipeline, runConcurrently } from '../src/pipeline';
-import { kvGetArticle } from '../src/cache';
+import { runPipeline, runConcurrently, sha256Hex, MAX_REFINEMENTS_PER_RUN } from '../src/pipeline';
+import { kvGetArticle, kvGetFeedIndex } from '../src/cache';
 
 const RSS_ORIGIN = 'https://www.bankier.pl';
 const RSS_PATH = '/rss/wiadomosci.xml';
@@ -309,5 +309,98 @@ describe('runPipeline', () => {
 		const record = await kvGetArticle(env.ARTICLE_CACHE, ARTICLE_ID_1);
 		expect(record?.status).toBe('error_retryable_refinement');
 		expect(record?.retryCount).toBe(1);
+	});
+});
+
+// ─── sha256Hex ────────────────────────────────────────────────────────────────
+
+describe('sha256Hex', () => {
+	it('matches the standard SHA-256 test vector', async () => {
+		expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+	});
+});
+
+// ─── runPipeline — skipping unchanged feeds ───────────────────────────────────
+
+describe('runPipeline - unchanged feed short-circuit', () => {
+	it('stores the RSS hash and pending-work flag in the feed index', async () => {
+		interceptRss();
+		interceptLlm([{ id: ARTICLE_ID_1, clickbait: false }, { id: ARTICLE_ID_2, clickbait: false }]);
+
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const index = await kvGetFeedIndex(env.ARTICLE_CACHE);
+		expect(index?.rssHash).toBe(await sha256Hex(SAMPLE_RSS));
+		expect(index?.hasPendingWork).toBe(false);
+	});
+
+	it('skips the run when the feed is unchanged and nothing is pending', async () => {
+		interceptRss();
+		interceptLlm([{ id: ARTICLE_ID_1, clickbait: false }, { id: ARTICLE_ID_2, clickbait: false }]);
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+		const before = await kvGetFeedIndex(env.ARTICLE_CACHE);
+
+		// Second run: only the RSS fetch is expected
+		interceptRss();
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const after = await kvGetFeedIndex(env.ARTICLE_CACHE);
+		expect(after).toEqual(before);
+	});
+
+	it('runs again on an unchanged feed when retryable work is pending', async () => {
+		interceptRss();
+		interceptLlm('Internal Server Error', 500);
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+		expect((await kvGetFeedIndex(env.ARTICLE_CACHE))?.hasPendingWork).toBe(true);
+
+		interceptRss();
+		interceptLlm([{ id: ARTICLE_ID_1, clickbait: false }, { id: ARTICLE_ID_2, clickbait: false }]);
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		expect((await kvGetArticle(env.ARTICLE_CACHE, ARTICLE_ID_1))?.status).toBe('not_clickbait');
+		expect((await kvGetFeedIndex(env.ARTICLE_CACHE))?.hasPendingWork).toBe(false);
+	});
+
+	it('runs when the feed content changed', async () => {
+		interceptRss();
+		interceptLlm([{ id: ARTICLE_ID_1, clickbait: false }, { id: ARTICLE_ID_2, clickbait: false }]);
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const changedRss = SAMPLE_RSS.replace('<title>Bankier.pl</title>', '<title>Bankier.pl (changed)</title>');
+		interceptRss(200, changedRss);
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const index = await kvGetFeedIndex(env.ARTICLE_CACHE);
+		expect(index?.channelTitle).toBe('Bankier.pl (changed)');
+		expect(index?.rssHash).toBe(await sha256Hex(changedRss));
+	});
+});
+
+// ─── runPipeline — refinement cap ─────────────────────────────────────────────
+
+describe('runPipeline - refinement cap', () => {
+	const COUNT = MAX_REFINEMENTS_PER_RUN + 2;
+	const ids = Array.from({ length: COUNT }, (_, i) => String(9200000 + i));
+	const pathFor = (id: string) => `/wiadomosc/Capped-${id}.html`;
+	const rss = `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>
+		<title>Bankier.pl</title><link>https://www.bankier.pl</link><description>W</description>
+		${ids.map((id) => `<item><title>T ${id}</title><link>${RSS_ORIGIN}${pathFor(id)}</link><description>D</description><pubDate>Wed, 16 Apr 2026 10:00:00 +0200</pubDate></item>`).join('')}
+	</channel></rss>`;
+
+	it(`refines at most ${MAX_REFINEMENTS_PER_RUN} articles per run and leaves the rest pending`, async () => {
+		interceptRss(200, rss);
+		interceptLlm(ids.map((id) => ({ id, clickbait: true })));
+		for (const id of ids.slice(0, MAX_REFINEMENTS_PER_RUN)) {
+			interceptArticle(pathFor(id));
+			interceptLlm({ title: 'Refined', description: '<p>R</p>' });
+		}
+
+		await runPipeline(env.ARTICLE_CACHE, await openCache(), RSS_URL, 'test-key');
+
+		const statuses = await Promise.all(ids.map(async (id) => (await kvGetArticle(env.ARTICLE_CACHE, id))?.status));
+		expect(statuses.filter((s) => s === 'refined')).toHaveLength(MAX_REFINEMENTS_PER_RUN);
+		expect(statuses.filter((s) => s === 'pending_refinement')).toHaveLength(COUNT - MAX_REFINEMENTS_PER_RUN);
+		expect((await kvGetFeedIndex(env.ARTICLE_CACHE))?.hasPendingWork).toBe(true);
 	});
 });

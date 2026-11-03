@@ -9,10 +9,10 @@ Bankier.pl's RSS feed (`https://www.bankier.pl/rss/wiadomosci.xml`) uses curiosi
 - **Runtime**: Cloudflare Workers
 - **Language**: TypeScript
 - **RSS parsing**: `fast-xml-parser`
-- **HTML extraction**: `@mozilla/readability` + `linkedom`
+- **HTML extraction**: native `HTMLRewriter` (Readability + linkedom were dropped: 100+ ms CPU per article vs. the Free plan's 10 ms limit)
 - **LLM**: LLM: provider-abstracted, initially MiniMax (via Token Plan Key), swappable to Anthropic/OpenAI/etc.
 - **Storage**: Workers KV (per-article cache, L1) + Cache API (full feed XML, L2)
-- **Scheduling**: Cron Triggers, every 2 minutes
+- **Scheduling**: Cron Triggers, every 10 minutes; runs are skipped when the upstream RSS hash is unchanged and no retries are pending
 - **Hosting cost**: free tier; LLM cost estimated well under $5/month
 
 Rejected alternatives: n8n (wrong tool for single-endpoint proxies), self-hosted VPS (unnecessary overhead), using ChatGPT/Claude subscription credits (not technically possible).
@@ -28,7 +28,7 @@ Rejected alternatives: n8n (wrong tool for single-endpoint proxies), self-hosted
 **Stage 2 — Per-article refinement** (only for clickbait articles):
 
 - Fetch full article HTML from bankier
-- Extract text via Readability
+- Extract text via HTMLRewriter (capped at 5 articles per run)
 - LLM call with article text + original title/description
 - LLM returns either refined versions OR signals `keep_original: true` if it judges the original is actually fine
 - Parallel execution via `Promise.all` with concurrency cap of 5
@@ -53,14 +53,14 @@ TTL: effectively permanent (30 days). Article IDs are stable.
 **L2 — Cache API, keyed by feed URL**:
 Full RSS XML output. TTL: 3 minutes.
 
-## Cron flow (every 2 min)
+## Cron flow (every 10 min)
 
-1. Fetch upstream RSS
+1. Fetch upstream RSS, SHA-256 it; if the hash matches the stored feed index and it has no pending work, stop here
 2. Batch-read KV for all article IDs
 3. Partition into: already-final / needs-classification / needs-refinement (from previous failures)
 4. Stage 1 on new articles → update KV
-5. Stage 2 on clickbait articles (parallel, `Promise.allSettled`) → update KV
-6. Rebuild feed XML, write to L2
+5. Stage 2 on up to 5 clickbait articles (parallel, `Promise.allSettled`) → update KV
+6. Write feed index (with RSS hash + pending-work flag), rebuild feed XML, write to L2
 
 ## HTTP fetch flow
 
